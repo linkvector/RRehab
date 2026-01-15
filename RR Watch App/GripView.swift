@@ -1,35 +1,32 @@
 import SwiftUI
 
 struct GripView: View {
-    // 引用逻辑
     @StateObject var manager = GripManager()
+    
+    // 获取关闭页面的能力
+    @Environment(\.dismiss) var dismiss
 
     var body: some View {
         VStack {
             switch manager.state {
                 
             case .idle:
-                // 1. 进场瞬间的状态（极短）
-                // 因为马上会自动开始，这里只需要显示个标题或者空着
                 Text("准备中...")
                     .font(.caption)
                     .foregroundColor(.gray)
                 
             case .preparing:
-                // 2. 倒计时 (3-2-1)
                 VStack {
                     Text("准备")
                         .font(.headline)
                         .foregroundColor(.green)
-                    
                     Text("\(manager.countdown)")
                         .font(.system(size: 80, weight: .bold))
                         .foregroundColor(.yellow)
-                        .contentTransition(.numericText()) // 数字滚动动画
+                        .contentTransition(.numericText())
                 }
                 
             case .training:
-                // 3. 训练进行中
                 VStack {
                     Text("听声握紧")
                         .font(.caption)
@@ -58,13 +55,11 @@ struct GripView: View {
                 }
                 
             case .finished:
-                // 4. 结束
                 VStack(spacing: 15) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 60))
                         .foregroundColor(.green)
                         .symbolEffect(.bounce)
-                    
                     Text("训练完成")
                         .font(.title2)
                 }
@@ -72,8 +67,16 @@ struct GripView: View {
         }
         .padding()
         .onAppear {
-            // 【关键修改】页面一显示，立刻开始，无需点击
             manager.startSession()
+        }
+        // 【修正点】这里适配了 watchOS 10 的新语法
+        // 以前是 { newValue in ... }
+        // 现在是 { oldValue, newValue in ... }，我们用 _ 忽略掉 oldValue
+        .onChange(of: manager.shouldDismiss) { _, newValue in
+            if newValue {
+                print("收到退出指令，返回首页")
+                dismiss() // 执行返回操作
+            }
         }
     }
 }
