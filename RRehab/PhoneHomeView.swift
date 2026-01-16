@@ -1,8 +1,8 @@
 import SwiftUI
-import Combine // 【修复点】必须引入 Combine 才能使用 timer 的 autoconnect()
+import Combine // 必须引入以支持 Timer 的 autoconnect()
 
 struct PhoneHomeView: View {
-    // 监听联络官
+    // 监听联络官状态
     @StateObject var connectivity = ConnectivityManager.shared
     
     // 控制未连接时的弹窗
@@ -16,7 +16,7 @@ struct PhoneHomeView: View {
                     Label("训练", systemImage: "figure.mind.and.body")
                 }
             
-            // --- 第二个标签页：统计 ---
+            // --- 第二个标签页：统计 (引用独立的 StatisticsTab.swift) ---
             StatisticsTab()
                 .tabItem {
                     Label("统计", systemImage: "chart.bar.xaxis")
@@ -24,12 +24,12 @@ struct PhoneHomeView: View {
         }
         .tint(.green)
         
-        // 1. 全屏监控页 (收到训练开始信号弹出)
+        // 1. 全屏监控页 (收到训练开始信号 training_started 时弹出)
         .fullScreenCover(isPresented: $connectivity.isMonitoring) {
             PhoneTrainingMonitorView()
         }
         
-        // 2. 结果统计页 (收到训练结束信号弹出)
+        // 2. 结果统计页 (收到训练结束信号 training_finished 时弹出)
         .sheet(isPresented: $connectivity.showResultPage) {
             PhoneResultView()
         }
@@ -80,10 +80,12 @@ struct TrainingTab: View {
                             FeatureCard(title: "握力训练", icon: "hand.wave.fill", color: .green)
                         }
                         
+                        // 悬臂唤醒 (占位)
                         NavigationLink(destination: Text("悬臂唤醒开发中...")) {
                             FeatureCard(title: "悬臂唤醒", icon: "figure.arms.open", color: .orange)
                         }
                         
+                        // 转腕训练 (占位)
                         NavigationLink(destination: Text("转腕训练开发中...")) {
                             FeatureCard(title: "转腕训练", icon: "arrow.triangle.2.circlepath", color: .blue)
                         }
@@ -108,44 +110,20 @@ struct TrainingTab: View {
         connectivity.currentActivity = .grip
         connectivity.sendMessage(["command": "start_grip_training"])
         
+        // 触觉反馈
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
     }
 }
 
-// MARK: - 2. 统计页面占位
-struct StatisticsTab: View {
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 20) {
-                Image(systemName: "chart.xyaxis.line")
-                    .font(.system(size: 60))
-                    .foregroundColor(.purple)
-                
-                Text("数据分析中心")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                Text("正在准备您的康复曲线...")
-                    .foregroundColor(.gray)
-                
-                Spacer()
-            }
-            .padding(.top, 50)
-            .navigationTitle("统计")
-            .background(Color(UIColor.systemGroupedBackground))
-        }
-    }
-}
-
-// MARK: - 3. 训练监控页 (包含机制二：隐形倒计时保护)
+// MARK: - 2. 训练监控页 (包含安全保护倒计时)
 struct PhoneTrainingMonitorView: View {
     @StateObject var connectivity = ConnectivityManager.shared
     
-    // 设置最大等待时间（例如 180 秒，超过一般训练时长）
+    // 最大等待时间（秒）
     @State private var timeOutSeconds: Int = 180
     
-    // 定时器每秒发布一次
+    // 定时器
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     
     var body: some View {
@@ -160,7 +138,6 @@ struct PhoneTrainingMonitorView: View {
                     .foregroundColor(.green)
                     .padding(.top, 80)
                 
-                // 图标修改为“手”
                 ZStack {
                     Circle()
                         .fill(Color.white)
@@ -186,19 +163,18 @@ struct PhoneTrainingMonitorView: View {
                 
                 Spacer()
                 
-                // 机制二的隐形保护倒计时（极淡显示，用于开发者观察）
+                // 开发者辅助：隐形保护倒计时
                 Text("安全保护倒计时: \(timeOutSeconds)")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(.gray.opacity(0.2))
                     .padding(.bottom, 20)
             }
         }
-        // 监听定时器，处理倒计时逻辑
         .onReceive(timer) { _ in
             if timeOutSeconds > 0 {
                 timeOutSeconds -= 1
             } else {
-                // 超时强制退出，防止页面锁死
+                // 超时强制保护退出
                 print("🚨 监控超时，执行主动安全退出")
                 connectivity.isMonitoring = false
             }
@@ -206,7 +182,7 @@ struct PhoneTrainingMonitorView: View {
     }
 }
 
-// MARK: - 4. 通用卡片组件
+// MARK: - 3. 通用功能卡片组件
 struct FeatureCard: View {
     let title: String
     let icon: String

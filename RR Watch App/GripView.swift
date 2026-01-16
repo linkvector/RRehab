@@ -66,12 +66,13 @@ struct GripView: View {
             }
         }
         .padding()
+        // --- 修改部分开始 ---
+        .navigationBarBackButtonHidden(true) // 隐藏左上角返回按钮
+        .toolbar(.hidden, for: .navigationBar) // 隐藏整个导航栏，消除空白占位
+        // --- 修改部分结束 ---
         .onAppear {
             manager.startSession()
         }
-        // 【修正点】这里适配了 watchOS 10 的新语法
-        // 以前是 { newValue in ... }
-        // 现在是 { oldValue, newValue in ... }，我们用 _ 忽略掉 oldValue
         .onChange(of: manager.shouldDismiss) { _, newValue in
             if newValue {
                 print("收到退出指令，返回首页")
