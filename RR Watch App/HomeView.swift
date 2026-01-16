@@ -1,37 +1,56 @@
 import SwiftUI
 
 struct HomeView: View {
+    // 【修改点】改为 ObservedObject，更适合监听单例的变化
+    @ObservedObject var connectivity = ConnectivityManager.shared
+    
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 15) {
                     
-                    // 1. 握力训练入口 (已完成)
+                    // 握力训练入口
                     NavigationLink(destination: GripView()) {
                         MenuCard(title: "握力训练", icon: "hand.wave.fill", color: .green)
                     }
-                    .buttonStyle(.plain) // 去掉默认样式，用我们自定义的
+                    .buttonStyle(.plain)
                     
-                    // 2. 悬臂唤醒入口 (新建占位)
+                    // 悬臂唤醒入口
                     NavigationLink(destination: ArmWakeupView()) {
                         MenuCard(title: "悬臂唤醒", icon: "figure.arms.open", color: .orange)
                     }
                     .buttonStyle(.plain)
                     
-                    // 3. 转腕训练入口 (新建占位)
+                    // 转腕训练入口
                     NavigationLink(destination: WristRotationView()) {
                         MenuCard(title: "转腕训练", icon: "arrow.triangle.2.circlepath", color: .blue)
                     }
                     .buttonStyle(.plain)
+                    
+                    // 调试信息：显示当前开关状态，方便你排查
+                    if connectivity.lastMessage.contains("start_grip") {
+                        Text("跳转信号: \(connectivity.showGripTraining ? "ON" : "OFF")")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                    }
                 }
                 .padding()
             }
             .navigationTitle("康复训练")
+            // 自动跳转逻辑
+            .navigationDestination(isPresented: $connectivity.showGripTraining) {
+                GripView()
+            }
+            // 【核心修复】每次回到首页，立刻把开关关掉
+            // 这样下次收到信号时，才能从 false 变成 true，触发跳转
+            .onAppear {
+                print("🏠 手表回到首页，重置跳转开关")
+                connectivity.showGripTraining = false
+            }
         }
     }
 }
 
-// MARK: - 自定义的大按钮组件
 struct MenuCard: View {
     let title: String
     let icon: String
@@ -39,24 +58,15 @@ struct MenuCard: View {
     
     var body: some View {
         HStack {
-            Image(systemName: icon)
-                .font(.title2)
-                .frame(width: 30)
-            
-            Text(title)
-                .font(.headline)
-                .fontWeight(.bold)
-            
+            Image(systemName: icon).font(.title2).frame(width: 30)
+            Text(title).font(.headline).fontWeight(.bold)
             Spacer()
-            
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundColor(.white.opacity(0.5))
+            Image(systemName: "chevron.right").font(.caption).foregroundColor(.white.opacity(0.5))
         }
         .padding()
-        .frame(height: 70) // 按钮高度，大一点好点
+        .frame(height: 70)
         .background(color)
-        .cornerRadius(15) // 圆角
+        .cornerRadius(15)
     }
 }
 
