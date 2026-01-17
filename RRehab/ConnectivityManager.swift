@@ -81,10 +81,14 @@ class ConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
             self.isMonitoring = true
             self.showResultPage = false
             
-        case "training_finished":
-            print("✅ 确认：训练已结束")
-            self.isMonitoring = false
-            self.showGripTraining = false
+            // 在 ConnectivityManager.swift 的 didReceiveMessage 中
+            case "training_finished":
+                self.isMonitoring = false   // 关闭监控全屏页
+                self.showResultPage = false // 确保不显示结果页弹窗
+                
+                // 发送跳转通知给 PhoneHomeView
+                NotificationCenter.default.post(name: NSNotification.Name("AutoSwitchToStats"), object: nil)
+            
             
             if let reps = data["totalReps"] as? Int,
                let warns = data["warnings"] as? Int {

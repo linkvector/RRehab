@@ -28,14 +28,19 @@ struct PhoneHomeView: View {
             PhoneTrainingMonitorView()
         }
         
-        // 2. 结果统计页 (训练结束并收到数据时弹出)
-        .sheet(isPresented: $connectivity.showResultPage) {
-            PhoneResultView()
+        // --- 核心改进：删除了原本在这里的 .sheet(isPresented: $connectivity.showResultPage) ---
+        // 这样即使收到数据，手机也不会弹出结果弹窗，减少悟空的参与
+        
+        // 监听自动跳转通知
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("AutoSwitchToStats"))) { _ in
+            withAnimation {
+                appState.selectedTab = 1 // 收到信号后，自动切换到统计标签页
+            }
         }
     }
 }
 
-// MARK: - 训练主页面
+// MARK: - 训练主页面 (保持不变)
 struct TrainingTab: View {
     @ObservedObject var connectivity: ConnectivityManager
     
@@ -43,8 +48,6 @@ struct TrainingTab: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    
-                    // 状态栏：显示与手表的连接状态
                     HStack {
                         Image(systemName: "applewatch")
                             .foregroundColor(connectivity.isReachable ? .green : .gray)
@@ -55,7 +58,6 @@ struct TrainingTab: View {
                     }
                     .padding([.horizontal, .top])
                     
-                    // 欢迎语
                     VStack(alignment: .leading, spacing: 5) {
                         Text("早安，悟空")
                             .font(.largeTitle)
@@ -66,24 +68,19 @@ struct TrainingTab: View {
                     }
                     .padding(.horizontal)
                     
-                    // 核心功能九宫格
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 15) {
-                        
-                        // 握力训练
                         Button {
                             startTraining(type: .grip)
                         } label: {
                             FeatureCard(title: "握力训练", icon: "hand.wave.fill", color: .green)
                         }
                         
-                        // 悬臂唤醒 (即将上线)
                         Button {
                             startTraining(type: .armWakeup)
                         } label: {
                             FeatureCard(title: "悬臂唤醒", icon: "figure.arms.open", color: .orange)
                         }
                         
-                        // 转腕训练 (占位)
                         FeatureCard(title: "转腕训练", icon: "arrow.triangle.2.circlepath", color: .blue)
                             .opacity(0.6)
                     }
@@ -100,13 +97,12 @@ struct TrainingTab: View {
         generator.impactOccurred()
         
         connectivity.currentActivity = type
-        // 根据不同类型发送不同指令
         let command = type == .grip ? "start_grip_training" : "start_arm_wakeup"
         connectivity.sendMessage(["command": command])
     }
 }
 
-// MARK: - 监控中转页
+// MARK: - 监控中转页 (已移除强制结束按钮)
 struct PhoneTrainingMonitorView: View {
     @StateObject var connectivity = ConnectivityManager.shared
     
@@ -120,7 +116,6 @@ struct PhoneTrainingMonitorView: View {
                     .fontWeight(.bold)
                     .foregroundColor(.green)
                 
-                // 动态图标动画
                 Image(systemName: connectivity.currentActivity == .grip ? "hand.wave.fill" : "figure.arms.open")
                     .font(.system(size: 100))
                     .foregroundColor(.white)
@@ -128,21 +123,13 @@ struct PhoneTrainingMonitorView: View {
                 
                 Text("请关注手表端的提示和震动")
                     .foregroundColor(.gray)
-                
-                // 紧急退出按钮
-                Button("强制结束") {
-                    connectivity.isMonitoring = false
-                }
-                .padding()
-                .background(Color.red.opacity(0.2))
-                .foregroundColor(.red)
-                .cornerRadius(10)
             }
         }
+        .interactiveDismissDisabled()
     }
 }
 
-// MARK: - 通用 UI 组件
+// MARK: - 通用 UI 组件 (保持不变)
 struct FeatureCard: View {
     let title: String
     let icon: String
