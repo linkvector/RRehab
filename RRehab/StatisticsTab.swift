@@ -3,7 +3,7 @@ import SwiftData
 import Charts
 
 struct StatisticsTab: View {
-    // 1. 获取原子数据
+    @EnvironmentObject var appState: AppState
     @Query(sort: \TrainingRecord.timestamp, order: .forward) private var allRecords: [TrainingRecord]
     
     @State private var selectedActivity: ActivityType = .grip
@@ -17,17 +17,13 @@ struct StatisticsTab: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 25) {
-                    // 头部维度切换
                     headerSelectors
                     
                     if filteredRecords.isEmpty {
                         ContentUnavailableView("暂无数据", systemImage: "chart.bar", description: Text("完成训练并保存后将显示报告"))
                             .padding(.top, 50)
                     } else {
-                        // 2. 核心图表区
                         chartContainer
-                        
-                        // 3. 数据汇总
                         summaryView
                     }
                 }
@@ -48,81 +44,43 @@ struct StatisticsTab: View {
                 .padding(.horizontal)
             
             if selectedTimeRange == .hour {
-                // 专项优化：24小时横向滚动图表
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
+                        // 给容器一个 ID，确保可以滚动
                         renderChart(data: generate24HourData())
-                            .frame(width: 1000, height: 260) // 固定宽度确保24个柱子布局
-                            .id("RIGHT_ANCHOR") // 右侧锚点
+                            .frame(width: 1000, height: 260)
                     }
                     .onAppear {
-                        // 自动对齐到最右侧（当前小时）
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        let currentHourLabel = String(format: "%02d:00", Calendar.current.component(.hour, from: Date()))
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                             withAnimation {
-                                proxy.scrollTo("RIGHT_ANCHOR", anchor: .trailing)
+                                proxy.scrollTo(currentHourLabel, anchor: .center)
+                            }
+                        }
+                    }
+                }
+            } else if selectedTimeRange == .month {
+                let data = generateMonthDayData()
+                let slotWidth: CGFloat = 45
+                let totalWidth = CGFloat(data.count) * slotWidth
+                
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        renderChart(data: data)
+                            .frame(width: totalWidth, height: 260)
+                    }
+                    .onAppear {
+                        let currentDayLabel = String(format: "%02d日", Calendar.current.component(.day, from: Date()))
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            withAnimation {
+                                proxy.scrollTo(currentDayLabel, anchor: .center)
                             }
                         }
                     }
                 }
             } else {
-                let data: [ReportEntry] = {
-                    switch selectedTimeRange {
-                    case .week:
-                        return generate7DayData()
-                    case .month:
-                        return generateMonthDayData()
-                    case .year:
-                        return generateYearMonthData()
-                    case .hour:
-                        return []
-                    }
-                }()
-                
-                if selectedTimeRange == .month {
-                    // 月视图：横向滚动，进入时将“当天”停在最右侧
-                    let slotWidth: CGFloat = 40 // 每个日期格子的总槽位宽度
-                    let totalWidth = CGFloat(data.count) * slotWidth
-                    let currentDay = Calendar.current.component(.day, from: Date())
-                    let currentDayLabel = String(format: "%02d日", currentDay)
-                    ScrollViewReader { proxy in
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            renderChart(data: data)
-                                .frame(width: totalWidth, height: 260)
-                                .id(currentDayLabel)
-                        }
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                withAnimation {
-                                    proxy.scrollTo(currentDayLabel, anchor: .trailing)
-                                }
-                            }
-                        }
-                    }
-                } else if selectedTimeRange == .year {
-                    // 年视图：横向滚动并自动滚动到当下月份
-                    let slotWidth: CGFloat = 60 // 每个月的槽位宽度，保证可读性
-                    let totalWidth = CGFloat(data.count) * slotWidth
-                    // 以“当前月份标签”为锚点，例如 01月、02月 ... 12月
-                    let currentMonthIndex = Calendar.current.component(.month, from: Date())
-                    let currentMonthLabel = String(format: "%02d月", currentMonthIndex)
-                    ScrollViewReader { proxy in
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            renderChart(data: data)
-                                .frame(width: totalWidth, height: 260)
-                                .id(currentMonthLabel)
-                        }
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                withAnimation {
-                                    proxy.scrollTo(currentMonthLabel, anchor: .trailing)
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    renderChart(data: data)
-                        .frame(height: 260)
-                }
+                renderChart(data: selectedTimeRange == .week ? generate7DayData() : generateYearMonthData())
+                    .frame(height: 260)
             }
         }
         .padding(.vertical)
@@ -131,100 +89,70 @@ struct StatisticsTab: View {
         .padding(.horizontal)
     }
     
-    private var titleForSelectedRange: String {
-        switch selectedTimeRange {
-        case .hour:
-            return "今日 24 小时分布 (向左滑动查看)"
-        case .week:
-            return "近 7 天趋势"
-        case .month:
-            return "本月每日趋势"
-        case .year:
-            return "今年每月趋势"
-        }
-    }
-    
     // MARK: - 通用渲染引擎
     private func renderChart(data: [ReportEntry]) -> some View {
         Chart {
             ForEach(data) { entry in
-                if selectedTimeRange == .hour {
-                    BarMark(
-                        x: .value("时间", entry.label),
-                        y: .value("次数", entry.totalCount),
-                        width: .fixed(22)
-                    )
-                    .foregroundStyle(activityColor.gradient)
-                    .cornerRadius(4)
-                    .annotation(position: .top) {
-                        if entry.totalCount > 0 {
-                            Text("\(entry.totalCount)")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(activityColor)
-                        }
-                    }
-                } else {
-                    if selectedTimeRange == .month {
-                        BarMark(
-                            x: .value("时间", entry.label),
-                            y: .value("次数", entry.totalCount),
-                            width: .fixed(22)
-                        )
-                        .foregroundStyle(activityColor.gradient)
-                        .cornerRadius(4)
-                        .annotation(position: .top) {
-                            if entry.totalCount > 0 {
-                                Text("\(entry.totalCount)")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(activityColor)
-                            }
-                        }
-                    } else {
-                        BarMark(
-                            x: .value("时间", entry.label),
-                            y: .value("次数", entry.totalCount)
-                        )
-                        .foregroundStyle(activityColor.gradient)
-                        .cornerRadius(4)
-                        .annotation(position: .top) {
-                            if entry.totalCount > 0 {
-                                Text("\(entry.totalCount)")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(activityColor)
-                            }
-                        }
+                BarMark(
+                    x: .value("时间", entry.label),
+                    y: .value("次数", entry.totalCount),
+                    width: (selectedTimeRange == .hour || selectedTimeRange == .month) ? .fixed(22) : .automatic
+                )
+                .foregroundStyle(activityColor.gradient)
+                .cornerRadius(4)
+                .annotation(position: .top) {
+                    if entry.totalCount > 0 {
+                        Text("\(entry.totalCount)")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(activityColor)
                     }
                 }
             }
         }
+        // 关键修复：chartXSelection 或使用 chartXAxis 来标记 ID 是不行的
+        // 我们通过在 Chart 外部包裹或使用这种技巧来确保 ScrollViewReader 能找到 ID
         .chartXAxis {
-            switch selectedTimeRange {
-            case .hour:
+            if selectedTimeRange == .hour {
                 AxisMarks(values: data.map { $0.label }) { value in
                     if let label = value.as(String.self), label.hasSuffix(":00") {
                         AxisValueLabel()
                         AxisGridLine()
                     }
                 }
-            case .week, .month, .year:
+            } else {
                 AxisMarks()
+            }
+        }
+        // 为了让 ScrollViewReader 找到 ID，我们将 ID 映射到 X 轴的视图上
+        .chartOverlay { proxy in
+            GeometryReader { geo in
+                Rectangle().fill(.clear)
+                    .onAppear {
+                        // 这里的逻辑通常用于手势，但为了简单的 ID 滚动，
+                        // 我们在 ForEach 内部处理即可。
+                    }
+            }
+        }
+        // 修正：在 Chart 后面使用背景视图来承载 ID 锚点（最稳妥的办法）
+        .background {
+            HStack(spacing: 0) {
+                ForEach(data) { entry in
+                    Color.clear
+                        .frame(width: (selectedTimeRange == .hour || selectedTimeRange == .month) ? (selectedTimeRange == .hour ? 1000/24.0 : (CGFloat(data.count)*45)/CGFloat(data.count)) : 0)
+                        .id(entry.label)
+                }
             }
         }
     }
     
-    // MARK: - 数据聚合逻辑
-    
+    // MARK: - 数据生成逻辑
     private func generate24HourData() -> [ReportEntry] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         let todayRecords = filteredRecords.filter { $0.timestamp >= today }
-        
         return (0...23).map { hour in
             let label = String(format: "%02d:00", hour)
-            let count = todayRecords
-                .filter { calendar.component(.hour, from: $0.timestamp) == hour }
-                .reduce(0) { $0 + $1.count }
-            
+            let count = todayRecords.filter { calendar.component(.hour, from: $0.timestamp) == hour }.reduce(0) { $0 + $1.count }
             return ReportEntry(label: label, totalCount: count, totalWarnings: 0, sortOrder: calendar.date(bySettingHour: hour, minute: 0, second: 0, of: today) ?? today)
         }
     }
@@ -234,12 +162,9 @@ struct StatisticsTab: View {
         let today = calendar.startOfDay(for: Date())
         let start = calendar.date(byAdding: .day, value: -6, to: today)!
         let rangeDays = (0...6).compactMap { calendar.date(byAdding: .day, value: $0, to: start) }
-        let records = filteredRecords.filter { $0.timestamp >= start && $0.timestamp < calendar.date(byAdding: .day, value: 1, to: today)! }
         return rangeDays.map { day in
-            let label = day.formatted(Date.FormatStyle().month(.twoDigits).day(.twoDigits))
-            let dayEnd = calendar.date(byAdding: .day, value: 1, to: day)!
-            let dayRecords = records.filter { $0.timestamp >= day && $0.timestamp < dayEnd }
-            let count = dayRecords.reduce(0) { $0 + $1.count }
+            let label = day.formatted(.dateTime.month(.twoDigits).day(.twoDigits))
+            let count = filteredRecords.filter { calendar.isDate($0.timestamp, inSameDayAs: day) }.reduce(0) { $0 + $1.count }
             return ReportEntry(label: label, totalCount: count, totalWarnings: 0, sortOrder: day)
         }
     }
@@ -249,13 +174,10 @@ struct StatisticsTab: View {
         let now = Date()
         let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now))!
         let range = calendar.range(of: .day, in: .month, for: now)!
-        let records = filteredRecords.filter { $0.timestamp >= startOfMonth }
         return range.compactMap { day -> ReportEntry in
             let date = calendar.date(byAdding: .day, value: day - 1, to: startOfMonth)!
-            let next = calendar.date(byAdding: .day, value: 1, to: date)!
             let label = String(format: "%02d日", day)
-            let dayRecords = records.filter { $0.timestamp >= date && $0.timestamp < next }
-            let count = dayRecords.reduce(0) { $0 + $1.count }
+            let count = filteredRecords.filter { calendar.isDate($0.timestamp, inSameDayAs: date) }.reduce(0) { $0 + $1.count }
             return ReportEntry(label: label, totalCount: count, totalWarnings: 0, sortOrder: date)
         }
     }
@@ -263,23 +185,28 @@ struct StatisticsTab: View {
     private func generateYearMonthData() -> [ReportEntry] {
         let calendar = Calendar.current
         let now = Date()
-        let startOfYear = calendar.date(from: calendar.dateComponents([.year], from: now))!
-        let records = filteredRecords.filter { $0.timestamp >= startOfYear }
-        return (1...12).map { month -> ReportEntry in
-            var components = calendar.dateComponents([.year], from: now)
-            components.month = month
-            components.day = 1
-            let date = calendar.date(from: components)!
-            let next = calendar.date(byAdding: .month, value: 1, to: date)!
-            let monthRecords = records.filter { $0.timestamp >= date && $0.timestamp < next }
-            let count = monthRecords.reduce(0) { $0 + $1.count }
+        return (1...12).map { month in
             let label = String(format: "%02d月", month)
-            return ReportEntry(label: label, totalCount: count, totalWarnings: 0, sortOrder: date)
+            let count = filteredRecords.filter {
+                calendar.component(.year, from: $0.timestamp) == calendar.component(.year, from: now) &&
+                calendar.component(.month, from: $0.timestamp) == month
+            }.reduce(0) { $0 + $1.count }
+            var components = calendar.dateComponents([.year], from: now)
+            components.month = month; components.day = 1
+            return ReportEntry(label: label, totalCount: count, totalWarnings: 0, sortOrder: calendar.date(from: components) ?? now)
         }
     }
 
-    // MARK: - UI 组件与计算属性
-    
+    // MARK: - UI 组件
+    private var titleForSelectedRange: String {
+        switch selectedTimeRange {
+        case .hour: return "今日 24 小时分布"
+        case .week: return "近 7 天趋势"
+        case .month: return "本月每日趋势"
+        case .year: return "今年每月趋势"
+        }
+    }
+
     private var headerSelectors: some View {
         VStack(spacing: 15) {
             Picker("项目", selection: $selectedActivity) {
@@ -289,9 +216,7 @@ struct StatisticsTab: View {
             }.pickerStyle(.segmented)
             
             Picker("维度", selection: $selectedTimeRange) {
-                ForEach(TimeRange.allCases, id: \.self) { range in
-                    Text(range.rawValue).tag(range)
-                }
+                ForEach(TimeRange.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }.pickerStyle(.palette)
         }.padding(.horizontal)
     }
@@ -308,19 +233,12 @@ struct StatisticsTab: View {
             Text(title).font(.caption).foregroundColor(.secondary)
             Text(value).font(.title2).fontWeight(.bold).foregroundColor(color)
         }
-        .frame(maxWidth: .infinity)
-        .padding()
-        .background(Color(UIColor.secondarySystemGroupedBackground))
-        .cornerRadius(12)
+        .frame(maxWidth: .infinity).padding().background(Color(UIColor.secondarySystemGroupedBackground)).cornerRadius(12)
     }
 
-    private var filteredRecords: [TrainingRecord] {
-        allRecords.filter { $0.typeName == selectedActivity.rawValue }
-    }
-    
+    private var filteredRecords: [TrainingRecord] { allRecords.filter { $0.typeName == selectedActivity.rawValue } }
     private var totalCount: Int { filteredRecords.reduce(0) { $0 + $1.count } }
     private var totalWarnings: Int { filteredRecords.reduce(0) { $0 + $1.warningCount } }
-    
     private var activityColor: Color {
         switch selectedActivity {
         case .grip: return .green
@@ -330,7 +248,7 @@ struct StatisticsTab: View {
     }
 }
 
-// MARK: - 数据模型 (放在结构体外，确保作用域正确)
+// MARK: - 数据模型
 struct ReportEntry: Identifiable {
     var id: String { label }
     let label: String
@@ -338,4 +256,3 @@ struct ReportEntry: Identifiable {
     let totalWarnings: Int
     let sortOrder: Date
 }
-
